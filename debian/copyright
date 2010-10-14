@@ -1,0 +1,32 @@
+This work was packaged for Debian by:
+
+    Elías Alejandro Año Mendoza <ealmdz@gmail.com> on Wed, 29 Sep 2010 09:29:04 -0500
+
+It was downloaded from:
+
+    http://extundelete.sourceforge.net/
+
+Upstream Author(s):
+
+    Nic Cas <number9652@users.sourceforge.net>
+
+Copyright:
+
+    Copyright (C) 2009, 2010 Nic Case <number9652@users.sourceforge.net>
+    Copyright (C) 2009 Steven G. Johnson <stevenj@alum.mit.edu>
+    Copyright (C) 2009 Matteo Frigo
+    Copyright (C) 1994 X Consortium
+    Copyright (C) 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005  Free Software Foundation, Inc.
+    Copyright (C) 1993, 1994, 1995, 1996 Theodore Ts'o
+    Copyright (C) 1998-2000 Red Hat, Inc.
+
+License:
+
+    This software comes under the GPL license version 2.
+
+The Debian packaging is:
+
+    Copyright (C) 2010 Elías Alejandro Año Mendoza <ealmdz@gmail.com>
+
+and is licensed under the GPL version 2,
+see "/usr/share/common-licenses/GPL-2".

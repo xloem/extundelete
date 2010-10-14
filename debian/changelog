@@ -1,0 +1,5 @@
+extundelete (0.2.0-1) unstable; urgency=low
+
+  * Initial release (Closes: #598186)
+
+ -- Elías Alejandro Año Mendoza <ealmdz@gmail.com>  Wed, 29 Sep 2010 09:29:04 -0500

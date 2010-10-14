@@ -1,0 +1,15 @@
+Source: extundelete
+Section: utils
+Priority: optional
+Maintainer: Elías Alejandro Año Mendoza <ealmdz@gmail.com>
+Build-Depends: debhelper (>= 7.0.50~), autotools-dev, e2fslibs-dev
+Standards-Version: 3.9.1
+Homepage: http://extundelete.sourceforge.net/
+
+Package: extundelete
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: utility that can recover deleted files from an ext3 or ext4 partition
+ extundelete uses the information stored in the partition's journal to attempt
+ to recover a file that has been deleted. There is no guarantee that any
+ particular file will be able to be undeleted.
