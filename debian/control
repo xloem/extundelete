@@ -5,6 +5,8 @@ Maintainer: Elías Alejandro Año Mendoza <ealmdz@gmail.com>
 Build-Depends: debhelper (>= 7.0.50~), autotools-dev, e2fslibs-dev
 Standards-Version: 3.9.1
 Homepage: http://extundelete.sourceforge.net/
+Vcs-Browser: http://git.debian.org/?p=forensics/extundelete.git
+Vcs-Git: git://git.debian.org/forensics/extundelete.git
 
 Package: extundelete
 Architecture: any
