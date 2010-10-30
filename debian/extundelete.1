@@ -76,6 +76,11 @@ Then, this option may be used to attempt to restore those files with a single ca
 .br
 This form also reduces redundancy from multiple calls parsing the journal multiple times.
 .TP
+.B \-\-output\-dir path/to/dump/recovered/files
+Restores files in the output dir 'path'.
+.br
+By default the restored files are created in ./RESTORE_FILES
+.TP
 .B \-\-restore\-all
 Restores all files possible to undelete to their names before deletion, when possible.
 Other files are restored to a filename like "file.NNNN". 

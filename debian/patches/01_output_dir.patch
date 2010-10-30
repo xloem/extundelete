@@ -1,4 +1,6 @@
 Index: extundelete/src/extundelete.cc
+Patch to create a additional option: --output-dir 
+to restore files in a specific path.
 ===================================================================
 --- extundelete.orig/src/extundelete.cc	2010-10-25 11:50:25.000000000 -0500
 +++ extundelete/src/extundelete.cc	2010-10-25 12:01:12.000000000 -0500
