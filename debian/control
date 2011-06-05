@@ -1,7 +1,9 @@
 Source: extundelete
 Section: utils
 Priority: optional
-Maintainer: Elías Alejandro Año Mendoza <ealmdz@gmail.com>
+Maintainer: Debian Forensics <forensics-devel@lists.alioth.debian.org>
+Uploaders: Christophe Monniez <christhophe.monniez@fccu.be>,
+ Elías Alejandro Año Mendoza <ealmdz@gmail.com>
 Build-Depends: debhelper (>= 7.0.50~), autotools-dev, e2fslibs-dev
 Standards-Version: 3.9.1
 Homepage: http://extundelete.sourceforge.net/
