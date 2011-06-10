@@ -1,8 +1,0 @@
-extundelete for Debian
-----------------------
-
-  * Created a patch to allow restore all recovered files
-    in a specific directory. The new option is: output-dir.
-
-
- -- Elías Alejandro Año Mendoza <ealmdz@gmail.com>  Wed, 29 Sep 2010 09:29:04 -0500
