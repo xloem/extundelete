@@ -1,7 +1,5 @@
 extundelete (0.2.0-1) unstable; urgency=low
 
   * Initial release. (Closes: #598186, #569085)
-  * Added debian/patches/01_output_dir.patch to
-    support restoring recovered files in a specific directory.
 
- -- Elías Alejandro Año Mendoza <ealmdz@gmail.com>  Wed, 29 Sep 2010 09:29:04 -0500
+ -- Elías Alejandro Año Mendoza <ealmdz@gmail.com>  Fri, 10 Jun 2011 18:29:04 -0500
