@@ -1,6 +1,10 @@
-Index: extundelete/src/extundelete.cc
-Patch to create a additional option: --output-dir 
-to restore files in a specific path.
+Description: create an additional option: --output-dir
+ This allows restore files in a output specific directory
+ instead  default directory ./RESTORE_FILES
+Forwarded: yes
+Author: Elías Alejandro Año Mendoza <ealmdz@gmail.com>
+Last-Update: 2010-10-25
+
 ===================================================================
 --- extundelete.orig/src/extundelete.cc	2010-10-25 11:50:25.000000000 -0500
 +++ extundelete/src/extundelete.cc	2010-10-25 12:01:12.000000000 -0500
