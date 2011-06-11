@@ -13,7 +13,7 @@ Last-Update: 2010-10-25
    os << "                         Each filename should be in the same format as an option\n";
    os << "                         to --restore-file, and there should be one per line.\n";
 +  os << "  --output-dir 'path'    Restore files in the output dir 'path'.\n";
-+  os << "                         By default the restored files are created in ./RESTORE_FILES.\n";
++  os << "                         By default the restored files are created under current directory 'RECOVERED_FILES'.\n";
    os << "  --restore-all          Attempts to restore everything.\n";
    os << "  -j journal             Reads an external journal from the named file.\n";
    os << "  -b blocknumber         Uses the backup superblock at blocknumber when opening\n";
