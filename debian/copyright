@@ -45,6 +45,10 @@ Files: missing
 Copyright: 1996, 1997, 1999, 2000, 2002, 2003, 2004, 2005 Free Software Foundation, Inc.
 License: GPL-2+
 
+Files: src/extundelete.cc
+Copyright: 2009, 2010, Nic Case.
+License: GPL-2
+
 Files: src/kernel-jbd.h
 Copyright: 1998-2000 Red Hat, Inc.
 License: GPL-2+
@@ -57,6 +61,25 @@ Files: debian/*
 Copyright: 2010, 2011, Elías Alejandro Año Mendoza <ealmdz@gmail.com>
            2010, Christophe Monniez <christophe.monniez@fccu.be>
 License: GPL-2+
+
+License: GPL-2
+ This program is free software; you can redistribute it and/or
+ modify it under the terms of the GNU General Public License
+ as published by the Free Software Foundation; version 2
+ of the License.
+ .
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ GNU General Public License for more details.
+ .
+ You should have received a copy of the GNU General Public License
+ along with this program; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+ .
+ On Debian systems, the full text of the GNU General Public
+ License version 2 can be found in the file
+ `/usr/share/common-licenses/GPL-2'.
 
 License: GPL-2+
  This program is free software; you can redistribute it and/or
