@@ -5,7 +5,7 @@ Source: http://extundelete.sourceforge.net/files
 
 Files: *
 Copyright: 2009, 2010, Nic Case <number9652@users.sourceforge.net>
-License: GPL-2+
+License: GPL-2
 
 Files: acinclude.m4
 Copyright: 2009, Steven G. Johnson <stevenj@alum.mit.edu>
@@ -44,10 +44,6 @@ License: GPL-2+
 Files: missing
 Copyright: 1996, 1997, 1999, 2000, 2002, 2003, 2004, 2005 Free Software Foundation, Inc.
 License: GPL-2+
-
-Files: src/extundelete.cc
-Copyright: 2009, 2010, Nic Case.
-License: GPL-2
 
 Files: src/kernel-jbd.h
 Copyright: 1998-2000 Red Hat, Inc.
