@@ -2,8 +2,9 @@ extundelete (0.2.0-2) unstable; urgency=low
 
   * Team upload.
   * Fix DEP-5 copyright syntax 
+  * Update DEP-5 uri 
 
- -- Julien Valroff <julien@debian.org>  Sat, 17 Sep 2011 08:53:30 +0200
+ -- Julien Valroff <julien@debian.org>  Sun, 18 Sep 2011 14:43:49 +0200
 
 extundelete (0.2.0-1) unstable; urgency=low
 
