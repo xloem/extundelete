@@ -1,7 +1,7 @@
 Format: http://anonscm.debian.org/viewvc/dep/web/deps/dep5.mdwn?revision=174
 Upstream-Name: extundelete
 Upstream-Contact: Nic Cas <number9652@users.sourceforge.net>
-Source: http://extundelete.sourceforge.net/files
+Source: http://sourceforge.net/projects/extundelete/files/
 
 Files: *
 Copyright: 2009, 2010, Nic Case <number9652@users.sourceforge.net>
