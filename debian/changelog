@@ -1,10 +1,22 @@
 extundelete (0.2.0-2) unstable; urgency=low
 
-  * Team upload.
-  * Fix DEP-5 copyright syntax 
-  * Update DEP-5 uri 
+  [ Elías Alejandro ]
+  * [6d1f431] debian/extundelete.1 improve option description
+  * [cb74d3d] 01_output_dir.patch improve option description
+  * [b426319] debian/compat bump debhelper compat to 8
+  * [889af36] debian/copyright added a new copyright
+  * [4f94f48] debian/copyright files under GPL-2
 
- -- Julien Valroff <julien@debian.org>  Sun, 18 Sep 2011 14:43:49 +0200
+  [ Julien Valroff ]
+  * [8879732] Fix DEP-5 copyright syntax
+  * [e561a90] Update DEP-5 uri
+
+  [ Michael Prokop ]
+  * [0bbcc08] debian/copyright: update URL for source
+  * [264d96d] Add three patches addressing compile issues with
+    e2fslibs-dev >=1.42-1 [Closes: #634401]
+
+ -- Michael Prokop <mika@debian.org>  Wed, 11 Jan 2012 18:07:21 +0100
 
 extundelete (0.2.0-1) unstable; urgency=low
 
