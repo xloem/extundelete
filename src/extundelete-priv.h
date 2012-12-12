@@ -12,24 +12,14 @@
 #include <ext2fs/ext2fs.h>
 
 // Global variables
-#ifndef VERSION
-#define VERSION "0.1.9";
-#endif
-extern std::string progname;
 extern std::string outputdir;
 
-// The superblock.
-extern ext2_super_block super_block;
 // Frequently used constant values from the superblock.
 extern uint32_t block_size_;
-extern uint32_t inodes_per_group_;
-extern uint16_t inode_size_;
-extern uint32_t inode_count_;
-extern uint32_t block_count_;
-extern ext2_group_desc* group_descriptor_table;
+extern unsigned int inode_size_;
 
 // Information from journal
-typedef std::vector<blk_t>  block_list_t;
+typedef std::vector<blk64_t>  block_list_t;
 extern std::vector<uint32_t> tag_seq;
 extern block_list_t tag_jblk;
 extern block_list_t tag_fsblk;
@@ -40,9 +30,15 @@ extern block_list_t rvk_block;
  * in that order, for each descriptor in the journal.
  * block_pair_t is (journal block number, sequence number).
 */
-typedef std::pair<blk_t, uint32_t>   block_pair_t;
-typedef std::pair<blk_t, block_pair_t>  journal_map_item;
-typedef std::multimap<blk_t, block_pair_t>  journal_map_t;
+typedef std::pair<blk64_t, uint32_t>   block_pair_t;
+typedef std::pair<blk64_t, block_pair_t>  journal_map_item;
+typedef std::multimap<blk64_t, block_pair_t>  journal_map_t;
 extern journal_map_t journ_map;
+
+static void parse_inode_block(ext2_filsys fs, struct ext2_inode *inode, const char *buf, ext2_ino_t ino);
+static errcode_t recover_inode(ext2_filsys fs, ext2_filsys jfs, ext2_ino_t ino,
+		struct ext2_inode *&inode, int ver);
+static int pair_names_with(ext2_filsys fs, ext2_filsys jfs, std::vector<ext2_ino_t>& inolist,
+		ext2_ino_t ino, std::string dirname, int del, std::vector<ext2_ino_t>& parent_inos);
 
 #endif //EXTUNDELETEPRIV_H
