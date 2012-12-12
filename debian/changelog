@@ -1,3 +1,9 @@
+extundelete (0.2.3-1) UNRELEASED; urgency=low
+
+  * Imported Upstream version 0.2.3
+
+ -- Christophe Monniez <christophe.monniez@fccu.be>  Wed, 12 Dec 2012 14:16:20 +0100
+
 extundelete (0.2.0-2) unstable; urgency=low
 
   [ Elías Alejandro ]
