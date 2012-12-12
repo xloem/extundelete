@@ -1,3 +1,2 @@
 01_output_dir.patch
-03_fix_opaque_ext2_group_desc_compile_error.patch
 04_fix_frags_per_group_compile_error.patch
