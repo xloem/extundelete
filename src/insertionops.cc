@@ -21,7 +21,7 @@ std::ostream& operator<<(std::ostream& os, const ext2_inode& inode)
 
   os << "File mode: " << inode.i_mode << std::endl;
   os << "Low 16 bits of Owner Uid: " << inode.i_uid << std::endl;
-  os << "Size in bytes: " << inode.i_size << std::endl;
+  os << "Size in bytes: " << EXT2_I_SIZE(&inode) << std::endl;
   os << "Access time: " << inode.i_atime << std::endl;
   os << "Creation time: " << inode.i_ctime << std::endl;
   os << "Modification time: " << inode.i_mtime << std::endl;
@@ -63,7 +63,7 @@ std::ostream& operator<<(std::ostream& os, const ext2_super_block* const s_block
   os << "Block size: " << EXT2_BLOCK_SIZE(s_block) << std::endl;
   os << "Fragment size: " << EXT2_FRAG_SIZE(s_block) << std::endl;
   os << "# Blocks per group: " << s_block->s_blocks_per_group << std::endl;
-  os << "# Fragments per group: " << s_block->s_frags_per_group << std::endl;
+  os << "# Fragments per group: " << EXT2_FRAGS_PER_BLOCK(s_block) << std::endl;
   os << "# Inodes per group: " << s_block->s_inodes_per_group << std::endl;
   os << "Mount time: " << s_block->s_mtime << std::endl;
   os << "Write time: " << s_block->s_wtime << std::endl;
@@ -202,7 +202,7 @@ std::ostream& operator<<(std::ostream& os, journal_header_t const& journal_heade
 std::ostream& operator<<(std::ostream& os, const journal_revoke_header_t journal_revoke_header)
 {
   os << journal_revoke_header.r_header << std::endl;
-  int count = journal_revoke_header.r_count;
+  size_t count = journal_revoke_header.r_count;
   os << "Bytes used: " << count << std::endl;
   //assert(sizeof(journal_revoke_header_t) <= static_cast<unsigned int>(count) && count <= block_size_);
   count -= sizeof(journal_revoke_header_t);
