@@ -3,12 +3,12 @@ Description: create an additional option: --output-dir
  instead  default directory ./RESTORE_FILES
 Forwarded: yes
 Author: Elías Alejandro Año Mendoza <ealmdz@gmail.com>
-Last-Update: 2010-10-25
+Last-Update: 2012-12-13
 
 ===================================================================
---- extundelete.orig/src/extundelete.cc	2010-10-25 11:50:25.000000000 -0500
-+++ extundelete/src/extundelete.cc	2010-10-25 12:01:12.000000000 -0500
-@@ -466,6 +466,8 @@
+--- a/src/cli.cc
++++ b/src/cli.cc
+@@ -120,6 +120,8 @@
    os << "  --restore-files 'path' Will restore files which are listed in the file 'path'.\n";
    os << "                         Each filename should be in the same format as an option\n";
    os << "                         to --restore-file, and there should be one per line.\n";
@@ -17,7 +17,7 @@ Last-Update: 2010-10-25
    os << "  --restore-all          Attempts to restore everything.\n";
    os << "  -j journal             Reads an external journal from the named file.\n";
    os << "  -b blocknumber         Uses the backup superblock at blocknumber when opening\n";
-@@ -601,6 +603,7 @@
+@@ -422,6 +424,7 @@
  		opt_show_journal_inodes,
  		opt_restore_file,
  		opt_restore_files,
@@ -25,15 +25,15 @@ Last-Update: 2010-10-25
  		opt_restore_directory,
  		opt_restore_inode,
  		opt_restore_all,
-@@ -626,6 +629,7 @@
+@@ -445,6 +448,7 @@
  		{"restore-inode", 1, &long_option, opt_restore_inode},
  		{"restore-file", 1, &long_option, opt_restore_file},
  		{"restore-files", 1, &long_option, opt_restore_files},
 +		{"output-dir", 1, &long_option, opt_output_dir},
  		{"restore-directory", 1, &long_option, opt_restore_directory},
  		{"restore-all", 0, &long_option, opt_restore_all},
- 		{"show-hardlinks", 0, &long_option, opt_show_hardlinks},
-@@ -688,6 +692,21 @@
+ 		{"log", 1, &long_option, opt_log},
+@@ -497,6 +501,21 @@
  			case opt_restore_files:
  				commandline_restore_files = optarg;
  				break;
