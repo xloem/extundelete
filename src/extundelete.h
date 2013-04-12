@@ -63,6 +63,7 @@ struct match_struct
 {
   ext2_ino_t *ret_ino;
   std::string curr_name;
+  ext2_filsys fs;
 };
 
 struct filebuf
@@ -87,7 +88,7 @@ int read_journal_superblock (ext2_filsys fs, ext2_filsys jfs,
 		journal_superblock_t *journal_superblock);
 int print_inode(ext2_filsys fs, ext2_ino_t ino);
 void classify_block(ext2_filsys fs, blk64_t blocknr);
-int extundelete_make_outputdir(const char * const dirname, const char * const progname);
+int extundelete_make_outputdir(const char * const dirname);
 
 // From insertionops.cc
 std::ostream& operator<<(std::ostream& os, const ext2_super_block* const s_block);
@@ -106,12 +107,9 @@ extern long commandline_after;
 namespace Log {
 extern std::ostream error;
 extern std::ostream warn;
+extern std::ostream status;
 extern std::ostream info;
 extern std::ostream debug;
-extern std::ofstream efile;
-extern std::ofstream wfile;
-extern std::ofstream ifile;
-extern std::ofstream dfile;
 }
 
 #endif //EXTUNDELETE_H

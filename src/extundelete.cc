@@ -2,7 +2,7 @@
 // 
 // Parts of this program are based upon ext3grep, which was licensed under the
 // GPL v2 or later and copyright 2008 by Carlo Wood.
-// extundelete Copyright 2009-10, by Nic Case
+// extundelete Copyright 2009-12, by Nic Case
 //
 // This program may be redistributed under the terms of the GNU Public
 // License version 2.
@@ -62,12 +62,14 @@ Important future enhancements:
 #include "config.h"
 
 /* C++ libraries */
+/* Needed definition to get limits such as UINT32_MAX on old c++ compilers */
+#define __STDC_LIMIT_MACROS 1
 #include <algorithm>
-#include <assert.h>
 #include <bitset>
 #include <cerrno>
 #include <climits>
 #include <cstring>
+#include <stdint.h>
 #include <cstdlib>
 #include <csignal>
 #include <ctime>
@@ -104,7 +106,7 @@ static errcode_t ext2fs_bmap2(ext2_filsys fs, ext2_ino_t ino,
 {
 	errcode_t retval;
 	blk_t block32, phys_blk32;
-	if(block > UINT_MAX)
+	if(block > UINT32_MAX)
 		return EDOM;
 	block32 = (blk_t) block;
 	retval = ext2fs_bmap(fs, ino, inode, block_buf, bmap_flags, block32, &phys_blk32);
@@ -150,7 +152,6 @@ static inline blk64_t ext2fs_inode_table_loc(ext2_filsys fs, dgrp_t group)
 // extern variable definitions
 std::string outputdir;
 uint32_t block_size_;
-unsigned int inode_size_;
 std::vector<uint32_t> tag_seq;
 block_list_t tag_jblk;
 block_list_t tag_fsblk;
@@ -158,13 +159,9 @@ block_list_t rvk_block;
 journal_map_t journ_map;
 std::ostream Log::error(std::cerr.rdbuf());
 std::ostream Log::warn(std::cout.rdbuf());
+std::ostream Log::status(std::cout.rdbuf());
 std::ostream Log::info(0);
 std::ostream Log::debug(0);
-std::ofstream Log::efile;
-std::ofstream Log::wfile;
-std::ofstream Log::ifile;
-std::ofstream Log::dfile;
-
 
 // Define triad: a class similar to std::pair, but with three values.
 template <class T1, class T2, class T3> struct triad
@@ -187,12 +184,6 @@ template<class T1, class T2, class T3>
 	inline bool
 	operator<(const triad<T1, T2, T3>& x, const triad<T1, T2, T3>& y)
 	{ return x.first < y.first; }
-
-
-struct nth_block {
-	blk64_t n;
-	blk64_t *blknum;
-};
 
 
 #ifndef EXT4_FEATURE_INCOMPAT_64BIT
@@ -266,29 +257,15 @@ static int extundelete_test_block_bitmap(ext2fs_block_bitmap block_map, blk64_t 
 	}
 
 	blk64_t inode_table = ext2fs_inode_table_loc(fs, group);
-	assert(block >= inode_table && (size_t)block_size_ * (block + 1) <= (size_t)block_size_ * inode_table + EXT2_INODES_PER_GROUP(fs->super) * inode_size_);
-	return (ext2_ino_t)( 1 + group * EXT2_INODES_PER_GROUP(fs->super) + (size_t)block_size_ * (block - inode_table) / inode_size_);
-}
-
-// Returns the number of blocks a non-sparse file would need for the data
-static inline blk64_t numdatablocks(const struct ext2_inode * const inode) {
-	blk64_t val = 0;
-	if( LINUX_S_ISDIR(inode->i_mode) ) {
-		val = (inode->i_size + block_size_ - 1) / block_size_;
+	if(block >= inode_table && (size_t)EXT2_BLOCK_SIZE(fs->super) * (block + 1) <=
+			(size_t)EXT2_BLOCK_SIZE(fs->super) * inode_table + EXT2_INODES_PER_GROUP(fs->super) * EXT2_INODE_SIZE(fs->super)) {
+		return (ext2_ino_t)( 1 + group * EXT2_INODES_PER_GROUP(fs->super)
+				+ (size_t)EXT2_BLOCK_SIZE(fs->super) * (block - inode_table) / EXT2_INODE_SIZE(fs->super));
 	} else {
-		val = (EXT2_I_SIZE(inode) + block_size_ - 1) / block_size_;
+		return 0;
 	}
-	return val;
 }
 
-// Returns the number of total blocks of the inode used on disk, including
-// indirect blocks
-static inline blk64_t numblocks(const struct ext2_inode * const inode) {
-	// Calculated this way to avoid overflow
-	blk64_t spb = (blk64_t) block_size_ / 512; // Sectors per block
-	blk64_t val = (inode->i_blocks + block_size_/1024) / spb;
-	return val;
-}
 
 // Below are a bunch of functions used to convert 16, 32, and 64 bit
 // values read from disk to the proper endianness for the cpu we are
@@ -381,13 +358,11 @@ static void journal_header_to_cpu(char *jhead)
 	be32_to_cpu( (uint32_t *) &jhead[item*2] );
 }
 
-// Changes a journal revoke header, as read from disk, to the same
+
+// Changes the count member of the journal revoke header to the same
 // endianness as the computer this program is running on.
-// Note: This function may fail if (for example) the partition was created on
-// a system which has sizeof(int) != 4.  
-static void journal_revoke_header_to_cpu(char *jrh)
+static void journal_revoke_count_to_cpu(char *jrh)
 {
-	journal_header_to_cpu(jrh);
 	char *rvkd = jrh + sizeof(journal_header_t);
 	if (sizeof(int) == 2)
 		be16_to_cpu( (uint16_t *) rvkd );
@@ -398,9 +373,13 @@ static void journal_revoke_header_to_cpu(char *jrh)
 	else {
 		Log::error << "The system's integer size is nonstandard and the"
 		<<" program cannot continue." << std::endl;
-		assert(sizeof(int) == 4);
+		/* Invalidate the magic value of the header to show
+		 * there has been an error.
+		 */
+		(reinterpret_cast<journal_revoke_header_t*>(jrh))->r_header.h_magic = 0;
 	}
 }
+
 
 // Changes a journal block tag, as read from disk, to the same
 // endianness as the computer this program is running on.
@@ -449,7 +428,6 @@ int load_super_block(ext2_filsys fs)
 	uint32_t groups_ = fs->super->s_inodes_count / fs->super->s_inodes_per_group;
 	block_size_ = EXT2_BLOCK_SIZE(fs->super);
 	uint32_t inodes_per_group_ = EXT2_INODES_PER_GROUP(fs->super);
-	inode_size_ = EXT2_INODE_SIZE(fs->super);
 
 	// Sanity checks.
 	// ext2-based filesystem
@@ -457,13 +435,13 @@ int load_super_block(ext2_filsys fs)
 	// All inodes belong to a group.
 	if (groups_ * inodes_per_group_ != fs->super->s_inodes_count) return EU_FS_ERR;
 	// The inode bitmap has to fit in a single block.
-	if (inodes_per_group_ > 8 * block_size_) return EU_FS_ERR;
+	if (inodes_per_group_ > (unsigned)8 * EXT2_BLOCK_SIZE(fs->super)) return EU_FS_ERR;
 	// Each inode must fit within one block.
-	if (inode_size_ > block_size_) return EU_FS_ERR;
+	if (EXT2_INODE_SIZE(fs->super) > EXT2_BLOCK_SIZE(fs->super)) return EU_FS_ERR;
 	// inode_size must be a power of 2.
-	if( (inode_size_ - 1) & inode_size_ ) return EU_FS_ERR;
+	if( (EXT2_INODE_SIZE(fs->super) - 1) & EXT2_INODE_SIZE(fs->super) ) return EU_FS_ERR;
 	// There should fit exactly an integer number of inodes in one block.
-	if ((block_size_ / inode_size_) * inode_size_ != block_size_) return EU_FS_ERR;
+	if ((EXT2_BLOCK_SIZE(fs->super) / EXT2_INODE_SIZE(fs->super)) * EXT2_INODE_SIZE(fs->super) != EXT2_BLOCK_SIZE(fs->super)) return EU_FS_ERR;
 	// File system must have a journal.
 	if(!(super_block.s_feature_compat & EXT3_FEATURE_COMPAT_HAS_JOURNAL)) {
 		Log::error << "ERROR: The specified device does not have a journal file.	"
@@ -478,7 +456,7 @@ int load_super_block(ext2_filsys fs)
 	if ((super_block.s_feature_compat & EXT2_FEATURE_COMPAT_IMAGIC_INODES))
 		Log::warn << "WARNING: Unknown file system feature: EXT2_FEATURE_COMPAT_IMAGIC_INODES\n";
 	if ((super_block.s_feature_compat & EXT2_FEATURE_COMPAT_EXT_ATTR))
-		Log::warn << "WARNING: Extended attributes are not restored.\n";
+		Log::warn << "NOTICE: Extended attributes are not restored.\n";
 
 	if ((super_block.s_feature_incompat & EXT2_FEATURE_INCOMPAT_COMPRESSION))
 		Log::warn << "WARNING: File systems with EXT2_FEATURE_INCOMPAT_COMPRESSION set (like this one) have not been tested.\n";
@@ -520,20 +498,15 @@ static int print_entry(ext2_ino_t /*dir*/, int entry,
 }
 
 void print_directory_inode(ext2_filsys fs, struct ext2_inode *inode,
-		ext2_ino_t ino)
+		ext2_ino_t /*ino*/)
 {
-	blk64_t blocknr;
-	int bmapflags = 0;
-	char *buf = new char[block_size_];
+	char *buf = new char[EXT2_BLOCK_SIZE(fs->super)];
 	std::cout << "File name                                       ";
 	std::cout << "| Inode number | Deleted status\n";
-	for(blk64_t n = 0; n < numdatablocks(inode); n++) {
-		ext2fs_bmap2(fs, ino, inode, NULL, bmapflags, n, NULL, &blocknr);
-		std::cout << "Directory block " << blocknr << ":\n";
-		struct dir_context ctx = {0,
+	struct dir_context ctx = {0,
 			DIRENT_FLAG_INCLUDE_REMOVED, buf, print_entry, fs, 0};
-		extundelete_process_dir_block(fs, &blocknr, 0, 0, 0, &ctx);
-	}
+	extundelete_block_iterate3 (fs, *inode, BLOCK_FLAG_DATA_ONLY, NULL,
+				extundelete_process_dir_block, &ctx);
 	delete[] buf;
 }
 
@@ -574,56 +547,52 @@ errcode_t read_block64(ext2_filsys fs, blk64_t *blocknr, e2_blkcnt_t blockcnt,
 	errcode_t retval;
 #ifdef HAVE_IO_CHANNEL_READ_BLK64
 	retval = io_channel_read_blk64(fs->io, *blocknr, 1,
-		reinterpret_cast<char *>(buf) + block_size_ * blockcnt);
+		reinterpret_cast<char *>(buf) + EXT2_BLOCK_SIZE(fs->super) * blockcnt);
 #else
 	if(*blocknr > UINT32_MAX)
 		return EDOM;
 	retval = io_channel_read_blk(fs->io, (blk_t) *blocknr, 1,
-		reinterpret_cast<char *>(buf) + block_size_ * blockcnt);
+		reinterpret_cast<char *>(buf) + EXT2_BLOCK_SIZE(fs->super) * blockcnt);
 #endif
 	return retval;
 }
 
 
-dgrp_t extundelete_group_of_blk(ext2_filsys fs, blk64_t block) {
-#ifdef HAVE_EXT2FS_GROUP_OF_BLK2
-	return ext2fs_group_of_blk2(fs, block);
-#else
+#ifndef HAVE_EXT2FS_GROUP_OF_BLK2
+static dgrp_t ext2fs_group_of_blk2(ext2_filsys fs, blk64_t block) {
 	if(block > UINT32_MAX)
 		return EDOM;
 	return ext2fs_group_of_blk(fs, (blk_t) block);
-#endif
 }
+#endif
 
 
-errcode_t extundelete_read_dir_block(ext2_filsys fs, blk64_t block, void *buf) {
-#ifdef HAVE_EXT2FS_READ_DIR_BLOCK3
-	return ext2fs_read_dir_block3(fs, block, buf, 0);
-#else
+#ifndef HAVE_EXT2FS_READ_DIR_BLOCK3
+static errcode_t ext2fs_read_dir_block3(ext2_filsys fs, blk64_t block, void *buf, int flags) {
 	if(block > UINT32_MAX)
 		return EDOM;
 	return ext2fs_read_dir_block(fs, (blk_t) block, buf);
-#endif
 }
+#endif
 
 
 // This function prints the data contained within the block blocknr
 void classify_block(ext2_filsys fs, blk64_t blocknr)
 {
-	char* block = new char[block_size_];
-	std::cout << "Block size: " << block_size_ << std::endl;
+	char* block = new char[EXT2_BLOCK_SIZE(fs->super)];
+	std::cout << "Block size: " << EXT2_BLOCK_SIZE(fs->super) << std::endl;
 
 	read_block64(fs, &blocknr, 0, 0, 0, block);
 	std::cout << "Contents of block " << blocknr << ":" << std::endl;
-	dump_hex_to(std::cout, block, block_size_);
+	dump_hex_to(std::cout, block, EXT2_BLOCK_SIZE(fs->super));
 	std::cout << std::endl;
 	std::cout << "Block " << blocknr << " is ";
 	int allocated = extundelete_test_block_bitmap(fs->block_map, blocknr);
 	if(!allocated) std::cout << "not ";
 	std::cout << "allocated." << std::endl;
-	std::cout << "Block " << blocknr <<" is in group " << extundelete_group_of_blk(fs, blocknr)
+	std::cout << "Block " << blocknr <<" is in group " << ext2fs_group_of_blk2(fs, blocknr)
 	<< "." << std::endl;
-	errcode_t retval = extundelete_read_dir_block(fs, blocknr, block);
+	errcode_t retval = ext2fs_read_dir_block3(fs, blocknr, block, 0);
 	if(retval == 0) {
 		std::cout << "File name                                       ";
 		std::cout << "| Inode number | Deleted status\n";
@@ -644,13 +613,13 @@ static int get_block_nums64(ext2_filsys /*fs*/, blk64_t *blocknr, e2_blkcnt_t bl
 	return 0;
 }
 
-// Store the nth block number in a buffer.
-static int get_nth_block_num64(ext2_filsys /*fs*/, blk64_t *blocknr, e2_blkcnt_t blockcnt,
-		blk64_t /*ref*/, int /*off*/, void *buf)
+
+static int block_is_journal(ext2_filsys /*fs*/, blk64_t *blocknr, e2_blkcnt_t /*blockcnt*/,
+		blk64_t /*ref*/, int /*off*/, void *priv)
 {
-	struct nth_block *nth_blk = reinterpret_cast<nth_block *>(buf);
-	if( (blk64_t) blockcnt == nth_blk->n) {
-		*(nth_blk->blknum) = *blocknr;
+	blk64_t *test = reinterpret_cast<blk64_t*>(priv);
+	if (*test == *blocknr) {
+		*test = 0;
 		return BLOCK_ABORT;
 	}
 	return 0;
@@ -659,10 +628,18 @@ static int get_nth_block_num64(ext2_filsys /*fs*/, blk64_t *blocknr, e2_blkcnt_t
 
 /*static*/ bool is_journal(ext2_filsys fs, blk64_t block)
 {
+	/* Warning: currently only works with internal journals */
 	bool flag = false;
 	ext2_ino_t ino = fs->super->s_journal_inum;
 	errcode_t errcode;
 	struct ext2_inode *inode;
+
+	if(block == 0) {
+		Log::error << "Invalid block number 0 encountered when finding blocks in the journal"
+		<< std::endl;
+		return flag;
+	}
+
 	inode = (struct ext2_inode *) operator new(EXT2_INODE_SIZE(fs->super));
 	errcode = ext2fs_read_inode_full (fs, ino, inode, EXT2_INODE_SIZE(fs->super));
 	if(errcode){
@@ -670,23 +647,17 @@ static int get_nth_block_num64(ext2_filsys /*fs*/, blk64_t *blocknr, e2_blkcnt_t
 		<< errcode << std::endl;
 		return flag;
 	}
-	blk64_t *blocks = new blk64_t[ numblocks(inode) ];
 
-	errcode = extundelete_block_iterate3 (fs, *inode, 0, 0, get_block_nums64, blocks);
+	errcode = extundelete_block_iterate3 (fs, *inode, 0, 0, block_is_journal, &block);
 	if(errcode){
 		std::cout << "Warning: unknown error encountered; code "
 		<< errcode << std::endl;
 		return flag;
 	}
-	std::cout << blocks[0] << std::endl;
-	for (uint32_t n = 0; n < numblocks(inode); n++)
-		if (block == blocks[n])
-		{
-			flag = true;
-			break;
-		}
+	if(block == 0)
+		flag = true;
+
 	delete inode;
-	delete[] blocks;
 	return flag;
 }
 
@@ -749,8 +720,17 @@ static int entry_iterate(ext2_ino_t /*dir*/, int entry,
 
 }
 
-/*
- * pair_names_with: look through directory blocks to find deleted file names,
+
+static int process_deleted_dir(ext2_filsys fs, blk64_t *blocknr, e2_blkcnt_t /*blockcnt*/,
+		blk64_t /*ref*/, int /*off*/, void *priv)
+{
+	if(extundelete_test_block_bitmap(fs->block_map, *blocknr))
+		return 0;
+	return extundelete_process_dir_block(fs, blocknr, 0, 0, 0, priv);
+}
+
+
+/* pair_names_with: look through directory blocks to find deleted file names,
  * then pair those names with the inode number from the directory block.
  * This function should only be called when we think the file pointed to by 
  * "ino" is a directory.  The flag "del" indicates whether the directory entry
@@ -768,7 +748,7 @@ static int pair_names_with(ext2_filsys fs, ext2_filsys jfs, std::vector<ext2_ino
 	errcode_t retval;
 	struct ext2_inode *inode;
 	inode = (struct ext2_inode *) operator new(EXT2_INODE_SIZE(fs->super));
-	char *buf = new char[block_size_];
+	char *buf = new char[EXT2_BLOCK_SIZE(fs->super)];
 	// If we are expecting a deleted directory block, then don't try to read
 	// an inode in the file system -- it won't be the right one.
 	if(del)
@@ -777,17 +757,12 @@ static int pair_names_with(ext2_filsys fs, ext2_filsys jfs, std::vector<ext2_ino
 		retval = ext2fs_read_inode_full(fs, ino, inode, EXT2_INODE_SIZE(fs->super));
 
 	if(retval == 0 && LINUX_S_ISDIR(inode->i_mode) ) {
-		blk64_t *blocks = new blk64_t[ numdatablocks(inode) ];
-		extundelete_block_iterate3 (fs, *inode, BLOCK_FLAG_DATA_ONLY, NULL, get_block_nums64, blocks);
-
-		for(blk64_t n = 0; n < numdatablocks(inode); n++) {
-			blk64_t blknum = blocks[n];
-			struct pair_struct ps = {fs, jfs, inolist, ino, dirname, 0, parent_inos};
-			struct dir_context ctx = {0, 
+		struct pair_struct ps = {fs, jfs, inolist, ino, dirname, 0, parent_inos};
+		struct dir_context ctx = {0, 
 				DIRENT_FLAG_INCLUDE_REMOVED, buf, entry_iterate, &ps, 0};
-			extundelete_process_dir_block(fs, &blknum, 0, 0, 0, &ctx);
-		}
-		delete[] blocks;
+		/* FIXME: What should be done if this encounters an error? */
+		extundelete_block_iterate3 (fs, *inode, BLOCK_FLAG_DATA_ONLY, NULL,
+				extundelete_process_dir_block, &ctx);
 	}
 
 	if(inolist.size() == 0) { delete inode; delete[] buf; return 0; }
@@ -811,19 +786,11 @@ static int pair_names_with(ext2_filsys fs, ext2_filsys jfs, std::vector<ext2_ino
 		retval = recover_inode(fs, jfs, ino, inode, 0);
 
 	if(retval == 0 && LINUX_S_ISDIR(inode->i_mode) ) {
-
-		for(blk64_t n = 0; n < numdatablocks(inode); n++) {
-			blk64_t blknum = 0;
-			struct nth_block nb = {n, &blknum};
-			extundelete_block_iterate3 (fs, *inode, BLOCK_FLAG_DATA_ONLY, NULL, get_nth_block_num64, &nb);
-			// If the block is allocated, it is not valid.
-			if(extundelete_test_block_bitmap(fs->block_map, blknum))
-				continue;
-			struct pair_struct ps = {fs, jfs, inolist, ino, dirname, 1, parent_inos};
-			struct dir_context ctx = {0, 
+		struct pair_struct ps = {fs, jfs, inolist, ino, dirname, 1, parent_inos};
+		struct dir_context ctx = {0, 
 				DIRENT_FLAG_INCLUDE_REMOVED, buf, entry_iterate, &ps, 0};
-			extundelete_process_dir_block(fs, &blknum, 0, 0, 0, &ctx);
-		}
+		/* On error, it should probably just continue */
+		extundelete_block_iterate3 (fs, *inode, BLOCK_FLAG_DATA_ONLY, NULL, process_deleted_dir, &ctx);
 	}
 
 	if(inolist.size() == 0) { delete inode; delete[] buf; return 0; }
@@ -848,6 +815,7 @@ static int pair_names_with(ext2_filsys fs, ext2_filsys jfs, std::vector<ext2_ino
 
 int restore_directory(ext2_filsys fs, ext2_filsys jfs, ext2_ino_t dirino, std::string dirname)
 {
+	errcode_t retval = 0;
 	std::vector<ext2_ino_t> recoverable_inodes;
 	std::map<ext2_ino_t, uint32_t> deleted_inodes_map;
 	std::map<ext2_ino_t, uint32_t>::iterator dit;
@@ -855,14 +823,14 @@ int restore_directory(ext2_filsys fs, ext2_filsys jfs, ext2_ino_t dirino, std::s
 	block_list_t::reverse_iterator jit;
 	std::vector<uint32_t>::reverse_iterator sit;
 
-	Log::info << "Searching for recoverable inodes in directory ";
-	if(dirino == EXT2_ROOT_INO) Log::info << "/";
-	Log::info << dirname << " ... " << std::endl;
+	Log::status << "Searching for recoverable inodes in directory ";
+	if(dirino == EXT2_ROOT_INO) Log::status << "/";
+	Log::status << dirname << " ... " << std::endl;
 
 	//First, make a map of all the block group inode table locations
 	std::map<blk64_t, int> block_to_group_map;
 	blk64_t max_offset = (EXT2_INODES_PER_GROUP(fs->super) - 1) *
-		EXT2_INODE_SIZE(fs->super);
+			EXT2_INODE_SIZE(fs->super);
 	blk64_t max_block = max_offset >> EXT2_BLOCK_SIZE_BITS(fs->super);
 	for(int group = 0; (unsigned int)group < fs->group_desc_count; group++ ) {
 		blk64_t block_nr = ext2fs_inode_table_loc(fs, group);
@@ -870,7 +838,7 @@ int restore_directory(ext2_filsys fs, ext2_filsys jfs, ext2_ino_t dirino, std::s
 	}
 
 	// All the block numbers of deleted inode blocks
-	char *buf = new char[block_size_];
+	char *buf = new char[EXT2_BLOCK_SIZE(fs->super)];
 	struct ext2_inode *inode;
 	inode = (struct ext2_inode *) operator new(EXT2_INODE_SIZE(fs->super));
 	for ( it=tag_fsblk.rbegin(), jit=tag_jblk.rbegin(), sit=tag_seq.rbegin();
@@ -888,10 +856,11 @@ int restore_directory(ext2_filsys fs, ext2_filsys jfs, ext2_ino_t dirino, std::s
 		if ( blknum - (*bgit).first < max_block) {
 			int group = (*bgit).second;
 			blk64_t blknum1 = ext2fs_inode_table_loc(fs, group);
-			ext2_ino_t firstino = (ext2_ino_t) ((blknum - blknum1) * block_size_ / inode_size_
+			ext2_ino_t firstino = (ext2_ino_t) ((blknum - blknum1) * EXT2_BLOCK_SIZE(fs->super) / EXT2_INODE_SIZE(fs->super)
 				+ group * EXT2_INODES_PER_GROUP(fs->super) + 1);
-			read_journal_block(jfs, *jit, buf);
-			for(ext2_ino_t ino = firstino; ino < firstino + block_size_/inode_size_ ;
+			retval = read_journal_block(jfs, *jit, buf);
+			if(retval)  continue;
+			for(ext2_ino_t ino = firstino; ino < firstino + EXT2_BLOCK_SIZE(fs->super)/EXT2_INODE_SIZE(fs->super) ;
 					ino++ ) {
 				parse_inode_block(fs, inode, buf, ino);
 				// If we have a deleted copy, add to the deleted list
@@ -917,6 +886,7 @@ int restore_directory(ext2_filsys fs, ext2_filsys jfs, ext2_ino_t dirino, std::s
 			}
 		}
 	}
+
 	delete[] buf;
 	delete inode;
 
@@ -925,26 +895,28 @@ int restore_directory(ext2_filsys fs, ext2_filsys jfs, ext2_ino_t dirino, std::s
 		std::unique(recoverable_inodes.begin(), recoverable_inodes.end());
 	recoverable_inodes.resize( rit - recoverable_inodes.begin() );
 
-	Log::info << recoverable_inodes.size() << " recoverable inodes found." << std::endl;
-/*
-	Log::debug << "Deleted inodes:  ";
-	for(std::list<ext2_ino_t>::iterator it2 = deleted_inodes.begin(); it2 != deleted_inodes.end(); it2++) {
+	Log::status << recoverable_inodes.size() << " recoverable inodes found." << std::endl;
 
-		Log::debug << (int) *it2 << "   " << std::flush;
+	if( Log::debug.rdbuf() ) {
+		Log::debug << "Deleted inodes:  ";
+		for(std::map<ext2_ino_t, uint32_t>::iterator it2 = deleted_inodes_map.begin();
+				it2 != deleted_inodes_map.end(); it2++) {
+			Log::debug << it2->first << "   " << std::flush;
+		}
+		Log::debug << "Recoverable inodes:  ";
+		for(std::vector<ext2_ino_t>::iterator it2 = recoverable_inodes.begin();
+				it2 != recoverable_inodes.end(); it2++) {
+			Log::debug << (int) *it2 << "   " << std::flush;
+		}
 	}
-	Log::debug << "Recoverable inodes:  ";
-	for(std::vector<ext2_ino_t>::iterator it2 = recoverable_inodes.begin(); it2 != recoverable_inodes.end(); it2++) {
 
-		Log::debug << (int) *it2 << "   " << std::flush;
-	}
-//*/
-	Log::info << "Looking through the directory structure for deleted files ... "
+	Log::status << "Looking through the directory structure for deleted files ... "
 	<< std::endl;
 	std::vector<ext2_ino_t>::size_type rsize = recoverable_inodes.size();
 	int pnflag = !extundelete_test_inode_bitmap(fs, dirino);
 	std::vector<ext2_ino_t> parent_inos(1, EXT2_ROOT_INO);
 	pair_names_with(fs, jfs, recoverable_inodes, dirino, dirname, pnflag, parent_inos);
-	Log::info << recoverable_inodes.size() << " recoverable inodes still lost." << std::endl;
+	Log::status << recoverable_inodes.size() << " recoverable inodes still lost." << std::endl;
 
 	if(dirino == EXT2_ROOT_INO) {
 		std::vector<ext2_ino_t>::iterator diit;
@@ -955,36 +927,39 @@ int restore_directory(ext2_filsys fs, ext2_filsys jfs, ext2_ino_t dirino, std::s
 			restore_inode(fs, jfs, *diit, fname.str());
 		}
 		if(rsize == 0)
-			Log::info << "No files were undeleted." << std::endl;
+			Log::status << "No files were undeleted." << std::endl;
 	}
 	else if(rsize == recoverable_inodes.size() ) {
-		Log::info << "No files were undeleted." << std::endl;
+		Log::status << "No files were undeleted." << std::endl;
 	}
 	return 0;
 }
 
-/* Read a single block from the journal */
+
+/* Read a single block from the journal
+*/
 errcode_t read_journal_block(ext2_filsys fs, blk64_t n, char *buf)
 {
 	errcode_t retval;
-	if(fs->super->s_journal_inum) {
-		retval = read_block64(fs, &n, 0, 0, 0, buf);
-	}
-	else {
-		// External journal
-		if((retval = read_block64(fs, &n, 0, 0, 0, buf) )) {
-			com_err("extundelete", retval, "while reading journal block");
-			exit(1);
-		}
-	}
+	retval = read_block64(fs, &n, 0, 0, 0, buf);
+	if(retval)
+		com_err("extundelete", retval, "while reading journal block");
 	return retval;
 }
+
 
 /*
  * Read contents of journal file into global variables
 */
 int init_journal(ext2_filsys fs, ext2_filsys jfs, journal_superblock_t *jsb)
 {
+	errcode_t retval = 0;
+	blk64_t *blocks;
+	char *buf;
+	char *descbuf;
+	uint32_t number_of_descriptors = 0;
+	/* j_tags is sequence number, journal block number, filesystem block number */
+	std::vector<triad<uint32_t,blk64_t,blk64_t> > j_tags;
 	// Minimally validate input
 	if(fs->super->s_inodes_count == 0) return EU_FS_ERR;
 	if(jsb->s_blocksize == 0) return EU_FS_ERR;
@@ -994,15 +969,16 @@ int init_journal(ext2_filsys fs, ext2_filsys jfs, journal_superblock_t *jsb)
 	struct ext2_inode *journal_inode;
 	journal_inode = (struct ext2_inode *) operator new(EXT2_INODE_SIZE(fs->super));
 	ext2_ino_t journal_ino = fs->super->s_journal_inum;
-	ext2fs_read_inode_full (fs, journal_ino, journal_inode, EXT2_INODE_SIZE(fs->super));
+	retval = ext2fs_read_inode_full (fs, journal_ino, journal_inode, EXT2_INODE_SIZE(fs->super));
+	if(retval)  goto inode_finally;
 
 	// Load the journal descriptors into memory.
-	Log::info << "Loading journal descriptors ... " << std::flush;
+	Log::status << "Loading journal descriptors ... " << std::flush;
 
 	// Apparently, some bug exists that allocates one too many journal blocks,
 	// so add one to the number of data blocks expected to prevent a memory
 	// error during block_iterate.
-	blk64_t *blocks = new blk64_t[ 1 + jsb->s_maxlen ];
+	blocks = new blk64_t[ 1 + jsb->s_maxlen ];
 	blocks[ jsb->s_maxlen ] = 0;
 	if(fs->super->s_journal_inum) {
 		extundelete_block_iterate3 (fs, *journal_inode, BLOCK_FLAG_DATA_ONLY, 0, get_block_nums64, blocks);
@@ -1011,15 +987,13 @@ int init_journal(ext2_filsys fs, ext2_filsys jfs, journal_superblock_t *jsb)
 		for(blk64_t n = 0; n < jsb->s_maxlen; n++)
 			blocks[n] = n;
 
-	char *buf = new char[ block_size_];
-	char *descbuf = new char[ block_size_];
-	uint32_t number_of_descriptors = 0;
-	/* j_tags is sequence number, journal block number, filesystem block number */
-	std::vector<triad<uint32_t,blk64_t,blk64_t> > j_tags;
+	buf = new char[ EXT2_BLOCK_SIZE(jfs->super)];
+	descbuf = new char[ EXT2_BLOCK_SIZE(jfs->super)];
 
 	for (blk64_t n = 0; n < jsb->s_maxlen; n++)
 	{
-		read_journal_block(jfs, blocks[n], buf);
+		retval = read_journal_block(jfs, blocks[n], buf);
+		if(retval)  goto finally;
 		journal_header_to_cpu(buf);
 		journal_header_t* descriptor = reinterpret_cast<journal_header_t*>(buf);
 
@@ -1048,7 +1022,8 @@ int init_journal(ext2_filsys fs, ext2_filsys jfs, journal_superblock_t *jsb)
 					{
 						// This deals with a wrapped-around transaction
 						// Need to break if the wrapped transaction was overwritten.
-						read_journal_block(jfs, blocks[m], descbuf);
+						retval = read_journal_block(jfs, blocks[m], descbuf);
+						if(retval)  goto finally;
 						journal_header_to_cpu(descbuf);
 						journal_header_t* wrapped_descriptor =
 							reinterpret_cast<journal_header_t*>(descbuf);
@@ -1088,7 +1063,12 @@ int init_journal(ext2_filsys fs, ext2_filsys jfs, journal_superblock_t *jsb)
 			{
 				journal_revoke_header_t* rvk =
 					reinterpret_cast<journal_revoke_header_t*>(buf);
-				journal_revoke_header_to_cpu( (char *)rvk );
+				journal_revoke_count_to_cpu( (char *)rvk );
+				if(rvk->r_header.h_magic != JFS_MAGIC_NUMBER) {
+					retval = EU_FS_ERR;
+					goto finally;
+				}
+
 				Log::debug << std::endl
 				<< "Revoke block " << blocks[n] << ":"
 				<< " (size " << rvk->r_count << ") ";
@@ -1143,8 +1123,6 @@ int init_journal(ext2_filsys fs, ext2_filsys jfs, journal_superblock_t *jsb)
 		} // if statement
 	} // for loop
 
-	delete[] buf;
-	delete[] descbuf;
 	// Sort the list by ascending sequence number and populate the global
 	// variables in order.
 	std::sort(j_tags.begin(), j_tags.end() );
@@ -1159,34 +1137,41 @@ int init_journal(ext2_filsys fs, ext2_filsys jfs, journal_superblock_t *jsb)
 		journ_map.insert( point );
 	}
 
-	Log::info << number_of_descriptors << " descriptors loaded." << std::endl;
+	Log::status << number_of_descriptors << " descriptors loaded." << std::endl;
 
 	if( Log::debug.rdbuf() ) {
 		block_list_t::iterator it;
-		Log::debug << std::endl << "rvk_block contains:";
+		Log::debug << std::endl << "Information from the journal:";
+		Log::debug << std::endl << "Revoked block numbers:";
 		// All the block numbers of deleted directory blocks
 		for ( it=rvk_block.begin() ; it != rvk_block.end(); it++ )
 			Log::debug << " " << *it;
 		Log::debug << std::endl;
-		//Log::debug << "tag_seq contains:";
-		//for ( it=tag_seq.begin() ; it != tag_seq.end(); it++ )
-		//	Log::debug << " " << *it;
-		//Log::debug << std::endl;
-		Log::debug << "tag_jblk contains:";
+		Log::debug << "Sequence numbers:";
+		std::vector<uint32_t>::iterator sit;
+		for ( sit=tag_seq.begin() ; sit != tag_seq.end(); sit++ )
+			Log::debug << " " << *sit;
+		Log::debug << std::endl;
+		Log::debug << "Journal block numbers:";
 		for ( it=tag_jblk.begin() ; it != tag_jblk.end(); it++ )
 			Log::debug << " " << *it;
 		Log::debug << std::endl;
-		Log::debug << "tag_fsblk contains:";
+		Log::debug << "Filesystem block numbers:";
 		for ( it=tag_fsblk.begin() ; it != tag_fsblk.end(); it++ )
 			Log::debug << " " << *it;
 
 		Log::debug << std::endl;
 	}
 
-	delete journal_inode;
+finally:
+	delete[] buf;
+	delete[] descbuf;
 	delete[] blocks;
-	return 0;
+inode_finally:
+	delete journal_inode;
+	return retval;
 }
+
 
 // Modifies the inode number of match_struct priv
 // to set the inode of the directory entry
@@ -1204,6 +1189,7 @@ static int match_name(ext2_dir_entry *dirent, int /*off*/, int /*blksize*/,
 	return 0;
 }
 
+
 static int match_name2(ext2_ino_t /*dir*/, int /*entry*/,
 		struct ext2_dir_entry *dirent, int /*offset*/,
 		int /*blocksize*/, char * /*buf*/, void *priv)
@@ -1211,10 +1197,12 @@ static int match_name2(ext2_ino_t /*dir*/, int /*entry*/,
 	return match_name(dirent, 0, 0, 0, priv);
 }
 
+
 static bool compare_sequence(block_pair_t a, block_pair_t b) {
 	if(a.second < b.second) return true;
 	else return false;
 }
+
 
 // Returns block number of a copy of blknum that resides in the journal
 static blk64_t journ_get_dir_block(ext2_filsys /*fs*/, blk64_t blknum, void * /*buf*/)
@@ -1245,44 +1233,56 @@ static blk64_t journ_get_dir_block(ext2_filsys /*fs*/, blk64_t blknum, void * /*
 	}
 }
 
-static ext2_ino_t find_inode(ext2_filsys fs, ext2_filsys jfs, struct ext2_inode *inode,
-		std::string curr_part, blk64_t *blocks, int search_flags)
+
+static int match_ino(ext2_filsys fs, blk64_t *blocknr, e2_blkcnt_t /*blockcnt*/,
+		blk64_t /*ref*/, int /*off*/, void *priv)
 {
-	char *buf = new char[block_size_];
-	blk64_t blocknr;
+	errcode_t retval = 0;
+	struct dir_context *ctx = (struct dir_context *) priv;
+	struct match_struct *ms = (struct match_struct *) ctx->priv_data;
+	char *buf = ctx->buf;
+	if(ctx->dir == SEARCH_JOURNAL) {
+		blk64_t blocknum = journ_get_dir_block (ms->fs, *blocknr, buf);
+		if(blocknum == 0)  return 0;
+		retval = extundelete_process_dir_block(ms->fs, &blocknum, 0, 0, 0, ctx);
+	} else {
+		retval = extundelete_process_dir_block(fs, blocknr, 0, 0, 0, ctx);
+	}
+
+	ext2_ino_t ino2 = *(ms->ret_ino);
+
+	if(ino2 != 0) return BLOCK_ABORT;
+	return retval;
+}
+
+
+static ext2_ino_t find_inode(ext2_filsys fs, ext2_filsys jfs, struct ext2_inode *inode,
+		std::string curr_part, int search_flags)
+{
+	char *buf = new char[EXT2_BLOCK_SIZE(fs->super)];
 	ext2_ino_t ino2 = 0;
-	struct match_struct tmp = {0, curr_part};
+	struct match_struct tmp = {0, curr_part, jfs};
 	struct match_struct *priv = &tmp;
 	ext2_ino_t *new_ino = new ext2_ino_t;
 
-	for (blk64_t n = 0; n < numdatablocks(inode); ++n)
-	{
-		*new_ino = 0;
-		priv->ret_ino = new_ino;
-		priv->curr_name = curr_part;
-		struct dir_context ctx = {0, 
-			DIRENT_FLAG_INCLUDE_REMOVED, buf, match_name2, priv, 0};
-
-		if(search_flags == SEARCH_JOURNAL) {
-			blocknr = journ_get_dir_block (jfs, blocks[n], buf);
-			if(blocknr == 0) continue;
-			extundelete_process_dir_block(jfs, &blocknr, 0, 0, 0, &ctx);
-		}
-		else {
-			blocknr = blocks[n];
-			extundelete_process_dir_block(fs, &blocknr, 0, 0, 0, &ctx);
-		}
-
-		ino2 = *new_ino;
-
-		if(ino2 != 0) break;
+	*new_ino = 0;
+	priv->ret_ino = new_ino;
+	priv->curr_name = curr_part;
+	struct dir_context ctx = {search_flags, DIRENT_FLAG_INCLUDE_REMOVED,
+			buf, match_name2, priv, 0};
+	errcode_t code = extundelete_block_iterate3(fs, *inode, BLOCK_FLAG_DATA_ONLY,
+			NULL, match_ino, &ctx);
+	ino2 = *new_ino;
+	if(code!=0 && code != BLOCK_ABORT) {
+		com_err("extundelete", code, "while finding inode for %s", curr_part.c_str());
+		ino2 = 0;
 	}
 
 	delete new_ino;
 	delete[] buf;
-
 	return ino2;
 }
+
 
 /* Pseudo code for what the search should look like:
 dir1/dir2 is inode ino
@@ -1313,7 +1313,7 @@ errcode_t restore_file(ext2_filsys fs, ext2_filsys jfs, const std::string& fname
 	std::string curr_part;
 	errcode_t retval;
 
-	struct match_struct tmp = {0, curr_part};
+	struct match_struct tmp = {0, curr_part, fs};
 	struct match_struct *priv = &tmp;
 	ext2_ino_t *new_ino = new ext2_ino_t;
 	*new_ino = EXT2_ROOT_INO;
@@ -1359,46 +1359,31 @@ errcode_t restore_file(ext2_filsys fs, ext2_filsys jfs, const std::string& fname
 	struct ext2_inode *inode;
 	inode = (struct ext2_inode *) operator new(EXT2_INODE_SIZE(fs->super));
 	retval = recover_inode(fs, jfs, ino, inode, 0);
-	blk64_t *blocks = NULL;
-	if (retval==0) {
-		//A bad inode may cause way too much memory to be allocated
-		try {
-			//FIXME: find a way to do this without allocating that big chunk in blocks variable
-			blocks = new blk64_t[ numdatablocks(inode) ];
-			extundelete_block_iterate3 (fs, *inode, BLOCK_FLAG_DATA_ONLY, NULL, get_block_nums64, blocks);
-		}
-		catch (std::exception& error) {
-			delete[] blocks;
-			blocks = NULL;
-		}
-	}
 
-	char *buf = new char[ block_size_];
+	char *buf = new char[ EXT2_BLOCK_SIZE(fs->super)];
 
 	struct ext2_inode *inode2;
 	inode2 = (struct ext2_inode *) operator new(EXT2_INODE_SIZE(fs->super));
 	ext2fs_read_inode_full (fs, ino, inode2, EXT2_INODE_SIZE(fs->super));
-	blk64_t *blocks2 = new blk64_t[ numdatablocks(inode2) ];
-	extundelete_block_iterate3 (fs, *inode2, BLOCK_FLAG_DATA_ONLY, 0, get_block_nums64, blocks2);
 
 	ext2_ino_t ino2 = 0;
 
 	// Look at the blocks from the allocated inode in the journal
-	ino2 = find_inode(fs, jfs, inode2, curr_part, blocks2, SEARCH_JOURNAL);
+	ino2 = find_inode(fs, jfs, inode2, curr_part, SEARCH_JOURNAL);
 
 	// Look at the blocks from the deleted inode in the journal
-	if(ino2 == 0 && blocks) {
-		ino2 = find_inode(fs, jfs, inode, curr_part, blocks, SEARCH_JOURNAL);
+	if(ino2 == 0) {
+		ino2 = find_inode(fs, jfs, inode, curr_part, SEARCH_JOURNAL);
 	}
 
 	// Look at the blocks from the allocated inode in the file system
 	if(ino2 == 0) {
-		ino2 = find_inode(fs, jfs, inode2, curr_part, blocks2, 0);
+		ino2 = find_inode(fs, jfs, inode2, curr_part, 0);
 	}
 
 	// Look at the blocks from the deleted inode in the filesystem
-	if(ino2 == 0 && blocks) {
-		ino2 = find_inode(fs, jfs, inode, curr_part, blocks, 0);
+	if(ino2 == 0) {
+		ino2 = find_inode(fs, jfs, inode, curr_part, 0);
 	}
 
 	// Look through all revoked blocks for matching string
@@ -1443,35 +1428,21 @@ errcode_t restore_file(ext2_filsys fs, ext2_filsys jfs, const std::string& fname
 		ino2 = 0;
 	}
 
-	//Log::debug << "Post directory block search inode number: " << ino << std::endl;
-	//Log::debug << "Next file part: " << curr_part << std::endl;
-	//Log::debug << "File name and place: " << fname << "   " << place << std::endl;
+	Log::debug << "Post directory block search inode number: " << ino << std::endl;
+	Log::debug << "Next file part: " << curr_part << std::endl;
+	Log::debug << "File name and place: " << fname << "   " << place << std::endl;
 
-	char *buf2 = new char[ block_size_];
+	char *buf2 = new char[ EXT2_BLOCK_SIZE(fs->super)];
 	while(curr_part != "") {
 		ino2 = 0;
 		retval = recover_inode(fs, jfs, ino, inode, 0);
 		if(retval != 0) break;
 
-		blk64_t *blocks3 = NULL;
-		//A bad inode may cause way too much memory to be allocated
-		try {
-			blocks3 = new blk64_t[ numdatablocks(inode) ];
-			extundelete_block_iterate3 (fs, *inode, BLOCK_FLAG_DATA_ONLY, NULL, get_block_nums64, blocks3);
+		ino2 = find_inode(fs, jfs, inode, curr_part, SEARCH_JOURNAL);
 
-			// Look through copies of the blocks within the journal
-			ino2 = find_inode(fs, jfs, inode, curr_part, blocks3, SEARCH_JOURNAL);
-
-			// Looking through blocks in the filesystem in the right directory
-			if(ino2 == 0) {
-				ino2 = find_inode(fs, jfs, inode, curr_part, blocks3, 0);
-			}
-
-			delete[] blocks3;
-		}
-		catch (std::exception& error) {
-			delete[] blocks3;
-			blocks3 = NULL;
+		// Looking through blocks in the filesystem in the right directory
+		if(ino2 == 0) {
+			ino2 = find_inode(fs, jfs, inode, curr_part, 0);
 		}
 
 		// Looking through all revoked blocks
@@ -1520,15 +1491,13 @@ errcode_t restore_file(ext2_filsys fs, ext2_filsys jfs, const std::string& fname
 
 	}
 
-	// Log::debug << "Post-revoke search current inode number: " << ino << std::endl;
-	// Log::debug << "Next file part: " << curr_part << std::endl;
+	Log::debug << "Post-revoke search current inode number: " << ino << std::endl;
+	Log::debug << "Next file part: " << curr_part << std::endl;
 
 	//delete priv;
 	delete new_ino;
 	delete inode;
 	delete inode2;
-	delete[] blocks;
-	delete[] blocks2;
 	delete[] buf;
 	delete[] buf2;
 
@@ -1537,8 +1506,12 @@ errcode_t restore_file(ext2_filsys fs, ext2_filsys jfs, const std::string& fname
 		return retval;
 	}
 	if(curr_part == "") {
-		restore_inode(fs, jfs, ino, fname);
-		return 0;
+		retval = restore_inode(fs, jfs, ino, fname);
+		if(retval == 0)
+			Log::status << "Successfully restored file " << fname << std::endl;
+		else
+			Log::status << "Unable to restore file " << fname << std::endl;
+		return retval;
 	}
 	else {
 		Log::error << "Failed to restore file " << fname << std::endl
@@ -1561,22 +1534,22 @@ static inline errcode_t inode_is_valid(const ext2_filsys fs, const struct ext2_i
 	/* Remember this must account for both files and directories */
 	return
 		inode->i_dtime == 0 &&
-		numblocks(inode) > 0 &&
-		numdatablocks(inode) > 0 &&
 		inode->i_blocks <= fs->super->s_blocks_count &&
 		inode->i_blocks > 0 &&
 		inode->i_links_count > 0;
 }
 
+
 // Use ver = 0 to get previous behavior
 static errcode_t recover_inode(ext2_filsys fs, ext2_filsys jfs, ext2_ino_t ino,
 		struct ext2_inode *&inode, int ver)
 {
+	errcode_t retval = 0;
 	if ((ino == 0) || (ino > fs->super->s_inodes_count))
 		return EXT2_ET_BAD_INODE_NUM;
 	int group = ext2fs_group_of_ino(fs, ino);
 	blk64_t blknum1 = ext2fs_inode_table_loc(fs, group);
-	blk64_t blknum2 = (ino - 1 - group * EXT2_INODES_PER_GROUP(fs->super)) * inode_size_ / block_size_;
+	blk64_t blknum2 = (ino - 1 - group * EXT2_INODES_PER_GROUP(fs->super)) * EXT2_INODE_SIZE(fs->super) / EXT2_BLOCK_SIZE(fs->super);
 	blk64_t blknum = blknum1 + blknum2;
 
 	// Find the latest non-deleted inode in the journal that corresponds to the
@@ -1592,13 +1565,14 @@ static errcode_t recover_inode(ext2_filsys fs, ext2_filsys jfs, ext2_ino_t ino,
 	}
 	oldblks2.sort( compare_sequence );
 
-/*
-	std::list<block_pair_t>::iterator oit;
-	Log::debug << "oldblks contains:";
-	for ( oit=oldblks2.begin() ; oit != oldblks2.end(); oit++ )
-		Log::debug << " " << (*oit).first;
-	Log::debug << std::endl;
-//*/
+	if (Log::debug.rdbuf()) {
+		std::list<block_pair_t>::iterator oit;
+		Log::debug << "oldblks contains:";
+		for ( oit=oldblks2.begin() ; oit != oldblks2.end(); oit++ )
+			Log::debug << " " << (*oit).first;
+		Log::debug << std::endl;
+	}
+
 	bool found = false;
 	// If the inode is not allocated, we can just pick the first valid inode
 	bool deletedfound = !extundelete_test_inode_bitmap(fs, ino) &&
@@ -1606,9 +1580,10 @@ static errcode_t recover_inode(ext2_filsys fs, ext2_filsys jfs, ext2_ino_t ino,
 		commandline_after == 0;
 
 	std::list<block_pair_t>::reverse_iterator rit;
-	char *buf = new char[block_size_];
+	char *buf = new char[EXT2_BLOCK_SIZE(fs->super)];
 	for ( rit=oldblks2.rbegin() ; rit != oldblks2.rend(); ++rit ) {
-		read_journal_block(jfs, ((*rit).first), buf);
+		retval = read_journal_block(jfs, ((*rit).first), buf);
+		if(retval)  continue;
 		parse_inode_block(fs, inode, buf, ino);
 		if (inode->i_dtime != 0 && ((int64_t) (inode->i_dtime)) >= commandline_after &&
 				((int64_t) (inode->i_dtime)) <= commandline_before)
@@ -1625,24 +1600,28 @@ static errcode_t recover_inode(ext2_filsys fs, ext2_filsys jfs, ext2_ino_t ino,
 		}
 	}
 	delete[] buf;
-	if( !found ) return 1;
+	if( !found ) return EU_RESTORE_FAIL;
 
-	return 0;
+	return retval;
 }
 
 
-static int write_block64(ext2_filsys fs, blk64_t *blocknr, e2_blkcnt_t blockcnt,
+static int write_block(ext2_filsys fs, blk64_t *blocknr, e2_blkcnt_t blockcnt,
 		blk64_t /*ref_blk*/, int /*ref_offset*/, void *buf)
 {
+	errcode_t errcode;
 	std::fstream *file;
 	file = (((struct filebuf *)(buf))->file);
 	char *charbuf = ((struct filebuf *)buf)->buf;
 	int allocated = extundelete_test_block_bitmap(fs->block_map, *blocknr);
 	if(allocated == 0) {
-		std::streampos pos = blockcnt * block_size_;
+		std::streampos pos = blockcnt * EXT2_BLOCK_SIZE(fs->super);
 		(*file).seekp( pos );
-		read_block64(fs, blocknr, 0, 0, 0, charbuf);
-		(*file).write (charbuf, block_size_);
+		if ( !(*file).good() )  return BLOCK_ERROR;
+		errcode = read_block64(fs, blocknr, 0, 0, 0, charbuf);
+		if (errcode)  return errcode;
+		(*file).write (charbuf, EXT2_BLOCK_SIZE(fs->super));
+		if ( !(*file).good() )  return BLOCK_ERROR;
 		return 0;
 	}
 	else {
@@ -1673,51 +1652,72 @@ static void sanitize_file_name(std::string& str )
 
 }
 
+
+static int first_block_is_allocated(ext2_filsys fs, blk64_t *blocknr, e2_blkcnt_t /*blockcnt*/,
+		blk64_t /*ref*/, int /*off*/, void *ans)
+{
+	int *allocated = reinterpret_cast<int *>(ans);
+	if( *blocknr != 0 ) {
+		*allocated = extundelete_test_block_bitmap(fs->block_map, *blocknr);
+		return BLOCK_ABORT;
+	}
+	return 0;
+}
+
+
 errcode_t restore_inode(ext2_filsys fs, ext2_filsys jfs, ext2_ino_t ino, const std::string& dname)
 {
 	errcode_t retval;
 	std::streampos fsize = 0;
 	blk64_t tsize;
 	std::string fname (dname);
-	sanitize_file_name(fname);
+	std::string outputdir2;
+	size_t nextslash;
+	char *buf = NULL;
+	errcode_t flag = 0;
+	std::string fname2;
 	struct ext2_inode *inode;
+	int allocated = 2;
+
+	sanitize_file_name(fname);
 	inode = (struct ext2_inode *) operator new(EXT2_INODE_SIZE(fs->super));
 	retval = recover_inode(fs, jfs, ino, inode, 0);
 	if( retval ) {
 		Log::warn << "Unable to restore inode " << ino << " (" << fname
 		<< "): No undeleted copies found in the journal." << std::endl;
-		delete inode;
-		return EU_RESTORE_FAIL;
+		retval = EU_RESTORE_FAIL;
+		goto finally;
 	}
-	blk64_t blocknum = 0;
-	struct nth_block nb = {0, &blocknum};
-	retval = extundelete_block_iterate3 (fs, *inode, BLOCK_FLAG_DATA_ONLY, NULL, get_nth_block_num64, &nb);
+	retval = extundelete_block_iterate3 (fs, *inode, BLOCK_FLAG_DATA_ONLY, NULL, first_block_is_allocated, &allocated);
 	if( retval) {
 		Log::warn << "Unable to restore inode " << ino << " (" << fname
 		<< "): No data found." << std::endl;
-		delete inode;
-		return EU_RESTORE_FAIL;
+		retval = EU_RESTORE_FAIL;
+		goto finally;
 	}
-	if (blocknum != 0) {
-		int allocated = extundelete_test_block_bitmap(fs->block_map, blocknum);
-		if(allocated) {
-			Log::warn << "Unable to restore inode " << ino << " (" << fname
-			<< "): Space has been reallocated." << std::endl;
-			delete inode;
-			return EU_RESTORE_FAIL;
-		}
+	if(allocated) {
+		Log::warn << "Unable to restore inode " << ino << " (" << fname
+		<< "): Space has been reallocated." << std::endl;
+		retval = EU_RESTORE_FAIL;
+		goto finally;
 	}
 
-	std::string outputdir2 = outputdir + fname;
-	size_t nextslash = outputdir2.find('/');
+	outputdir2 = outputdir + fname;
+	nextslash = outputdir2.find('/');
+	errno = 0;
 	do {
-		mkdir(outputdir2.substr(0, nextslash).c_str(), 0755);
+		retval = mkdir(outputdir2.substr(0, nextslash).c_str(), 0755);
+		if(retval && errno != EEXIST) {
+			com_err("extundelete", errno, "while creating directory %s",
+					outputdir2.substr(0, nextslash).c_str());
+			retval = errno;
+			goto finally;
+		}
 		nextslash = outputdir2.find('/', nextslash+1);
 	} while(nextslash != std::string::npos);
 
-	char *buf = new char[ block_size_];
-	errcode_t flag = 0;
-	std::string fname2 = fname;
+	buf = new char[ EXT2_BLOCK_SIZE(fs->super)];
+	fname2 = fname;
 	// Make sure inode corresponds to regular file
 	if ( LINUX_S_ISREG(inode->i_mode) ) {
 
@@ -1732,16 +1732,16 @@ errcode_t restore_inode(ext2_filsys fs, ext2_filsys jfs, ext2_ino_t ino, const s
 		if (file.is_open())
 		{
 			struct filebuf bufstruct = {&file, buf};
-			flag = extundelete_block_iterate3 (fs, *inode, BLOCK_FLAG_DATA_ONLY, NULL, write_block64, &bufstruct);
+			flag = extundelete_block_iterate3 (fs, *inode, BLOCK_FLAG_DATA_ONLY, NULL, write_block, &bufstruct);
 			file.seekg( 0, std::ios::end );
-		    fsize = file.tellg();
+			fsize = file.tellg();
 			file.close();
 
 			if(!flag) {
 				std::streamoff rsize = EXT2_BLOCK_SIZE(fs->super) - inode->i_size % EXT2_BLOCK_SIZE(fs->super);
 				if( rsize == EXT2_BLOCK_SIZE(fs->super) )
 					rsize = 0;
-				if( EXT2_I_SIZE(inode) > fsize ) {
+				if( EXT2_I_SIZE(inode) > (uint64_t) fsize ) {
 					fsize = EXT2_I_SIZE(inode);
 				}
 				tsize = fsize - rsize;
@@ -1759,6 +1759,11 @@ errcode_t restore_inode(ext2_filsys fs, ext2_filsys jfs, ext2_ino_t ino, const s
 				}
 			}
 			else {
+				retval = rename( (outputdir + fname2).c_str(), (outputdir + fname2 + ".part").c_str() );
+				if(retval) {
+					Log::warn << "extundelete: " << strerror(errno) << " when renaming file "
+					<< (outputdir + fname2).c_str();
+				}
 				Log::warn << "Failed to restore inode " << ino << " to file "
 				<< (outputdir + fname2) << ":"
 				<< "Some blocks were allocated." << std::endl;
@@ -1779,26 +1784,30 @@ errcode_t restore_inode(ext2_filsys fs, ext2_filsys jfs, ext2_ino_t ino, const s
 		retval = EU_RESTORE_FAIL;
 	}
 
-	delete inode;
 	delete[] buf;
+
+finally:
+	delete inode;
 	return retval;
 }
 
-static void parse_inode_block(ext2_filsys fs, struct ext2_inode *inode, const char *buf, ext2_ino_t ino)
-{
-	int offset = (ino-1) % (block_size_/inode_size_);
-	const char *inodebuf = buf + offset*inode_size_;
+
+static void parse_inode_block(ext2_filsys fs, struct ext2_inode *inode,
+		const char *buf, ext2_ino_t ino) {
+	int offset = (ino-1) % (EXT2_BLOCK_SIZE(fs->super)/EXT2_INODE_SIZE(fs->super));
+	const char *inodebuf = buf + offset*EXT2_INODE_SIZE(fs->super);
 #ifdef WORDS_BIGENDIAN
 	int n = 1 ;
 	int hostorder = (*(char *) &n != 1);
-	ext2fs_swap_inode_full(fs, (struct ext2_inode_large *) inode, (struct ext2_inode_large *) inodebuf, 0, EXT2_INODE_SIZE(fs->super));
+	ext2fs_swap_inode_full(fs, (struct ext2_inode_large *) inode,
+			(struct ext2_inode_large *) inodebuf, 0, EXT2_INODE_SIZE(fs->super));
 #else
 	memcpy(inode, inodebuf, EXT2_INODE_SIZE(fs->super) );
 #endif
 }
 
-int get_journal_fs (ext2_filsys fs, ext2_filsys *jfs, std::string journal_filename) {
 
+int get_journal_fs (ext2_filsys fs, ext2_filsys *jfs, std::string journal_filename) {
 	errcode_t errcode;
 	if (fs->super->s_journal_inum)
 	{
@@ -1808,48 +1817,59 @@ int get_journal_fs (ext2_filsys fs, ext2_filsys *jfs, std::string journal_filena
 	else {
 		// Read the journal superblock from an external journal.
 		if(journal_filename.empty()) {
-			Log::error << "Must specify the external journal with -j devicename" << std::endl;
+			Log::error << "Must specify the external journal device name" << std::endl;
 			return EU_EXAMINE_FAIL;
 		}
 		io_manager io_mgr = unix_io_manager;
 		errcode = ext2fs_open( journal_filename.c_str(),
-			EXT2_FLAG_JOURNAL_DEV_OK, 0, 0, io_mgr, jfs);
+				EXT2_FLAG_JOURNAL_DEV_OK, 0, 0, io_mgr, jfs);
 		if (errcode) {
-			Log::error << "Error opening external journal." << std::endl;
-			return EU_EXAMINE_FAIL;
+			com_err("extundelete", errcode, "while opening external journal");
+			return errcode;
 		}
 	}
 	return 0;	
 }
 
+
 int read_journal_superblock (ext2_filsys fs, ext2_filsys jfs,
 		journal_superblock_t *journal_superblock) {
-
+	int retval = 0;
 	errcode_t errcode;
-	char *buf = new char[block_size_];
+	char *buf = new char[EXT2_BLOCK_SIZE(fs->super)];
+	blk64_t blknum;
+	struct ext2_inode *inode = NULL;
 	// Read the journal superblock.
 	if (fs->super->s_journal_inum)
 	{
 		// Read internal journal superblock
-		struct ext2_inode *inode;
 		inode = (struct ext2_inode *) operator new(EXT2_INODE_SIZE(fs->super));
-		ext2_ino_t journal_ino = fs->super->s_journal_inum;
-		ext2fs_read_inode_full (fs, journal_ino, inode, EXT2_INODE_SIZE(fs->super));
-		blk64_t blknum;
-		errcode = ext2fs_bmap2(fs, journal_ino, inode, NULL, 0, 0, NULL, &blknum);
+		errcode = ext2fs_read_inode_full (fs, fs->super->s_journal_inum, inode, EXT2_INODE_SIZE(fs->super));
 		if(errcode) {
-			Log::error << "bmap returned " << errcode << std::endl;
-			return EU_EXAMINE_FAIL;
+			com_err("extundelete", errcode, "while reading internal journal inode");
+			retval = errcode;
+			goto finally;
 		}
-		read_block64(jfs, &blknum, 0, 0, 0, buf);
-		delete inode;
+		errcode = ext2fs_bmap2(fs, fs->super->s_journal_inum, inode, NULL, 0, 0, NULL, &blknum);
+		if(errcode) {
+			com_err("extundelete", errcode, "while mapping internal journal superblock");
+			retval = errcode;
+			goto finally;
+		}
+		errcode = read_block64(jfs, &blknum, 0, 0, 0, buf);
+		if(errcode) {
+			com_err("extundelete", errcode, "while reading internal journal superblock");
+			retval = errcode;
+			goto finally;
+		}
 	}
 	else {
 		// Read the journal superblock from an external journal.
-		blk64_t jblk = jfs->super->s_first_data_block + 1;
-		if (( errcode = read_block64(jfs, &jblk, 0, 0, 0, buf) )) {
-			com_err("extundelete", errcode, "while reading journal superblock");
-			return EU_EXAMINE_FAIL;
+		blknum = jfs->super->s_first_data_block + 1;
+		if (( errcode = read_block64(jfs, &blknum, 0, 0, 0, buf) )) {
+			com_err("extundelete", errcode, "while reading external journal superblock");
+			retval = errcode;
+			goto finally;
 		}
 	}
 
@@ -1857,62 +1877,76 @@ int read_journal_superblock (ext2_filsys fs, ext2_filsys jfs,
 	journal_superblock_to_cpu(buf);
 	memcpy(journal_superblock, buf, sizeof(*journal_superblock));
 
-	delete[] buf;
 	// Sanity check to ensure there is no endianness problem.
-	if(journal_superblock->s_header.h_magic != JFS_MAGIC_NUMBER) return EU_FS_ERR;
-	return 0;
+	if(journal_superblock->s_header.h_magic != JFS_MAGIC_NUMBER)  retval = EU_FS_ERR;
+
+finally:
+	if(inode)  delete inode;
+	delete[] buf;
+	return retval;
 }
+
 
 int print_inode(ext2_filsys fs, ext2_ino_t ino) {
+	int retval = 0;
+	errcode_t errcode;
+	struct ext2_inode *inode;
+	int allocated;
+	inode = (struct ext2_inode *) operator new(EXT2_INODE_SIZE(fs->super));
+	errcode = ext2fs_read_inode_full (fs, ino, inode, EXT2_INODE_SIZE(fs->super));
+	if(errcode) {
+		com_err("extundelete", errcode, "while reading inode.");
+		retval = errcode;
+		goto finally;
+	}
+	std::cout << "Contents of inode " << ino << ":" << std::endl;
+	dump_hex_to(std::cout, reinterpret_cast<char const*> (inode), EXT2_INODE_SIZE(fs->super));
+	std::cout << std::endl;
 
-		struct ext2_inode *inode;
-		inode = (struct ext2_inode *) operator new(EXT2_INODE_SIZE(fs->super));
-		ext2fs_read_inode_full (fs, ino, inode, EXT2_INODE_SIZE(fs->super));
-		std::cout << "Contents of inode " << ino << ":" << std::endl;
-		dump_hex_to(std::cout, reinterpret_cast<char const*> (inode), inode_size_);
-		std::cout << std::endl;
+	allocated = extundelete_test_inode_bitmap(fs, ino);
+	if (allocated)
+		std::cout << "Inode is Allocated" << std::endl;
+	else
+		std::cout << "Inode is Unallocated" << std::endl;
 
-		int allocated = extundelete_test_inode_bitmap(fs, ino);
-		if (allocated)
-			std::cout << "Inode is Allocated" << std::endl;
-		else
-			std::cout << "Inode is Unallocated" << std::endl;
+	std::cout << *inode << std::endl;
+	if (LINUX_S_ISDIR(inode->i_mode) && inode->i_blocks > 0)
+		print_directory_inode(fs, inode, ino);
 
-		std::cout << *inode << std::endl;
-		if (LINUX_S_ISDIR(inode->i_mode) && inode->i_blocks > 0)
-			print_directory_inode(fs, inode, ino);
-		delete inode;
-		return 0;
+finally:
+	delete inode;
+	return retval;
 }
 
-int extundelete_make_outputdir(const char * const dirname, const char * const progname) {
+
+int extundelete_make_outputdir(const char * const dirname) {
 	struct stat statbuf;
+	int retval;
 	errno = 0;
 	if (stat(dirname, &statbuf) == -1)
 	{
 		if (errno != ENOENT)
 		{
-			int error = errno;
-			Log::warn << std::flush;
-			Log::error << progname << ": stat: " << dirname << ": "
-			<< strerror(error) << std::endl;
-			return EU_EXAMINE_FAIL;
+			retval = errno;
+			return retval;
 		}
-		else if (mkdir(dirname, 0755) == -1 && errno != EEXIST)
-		{
-			int error = errno;
-			Log::warn << std::flush;
-			Log::error << progname << ": failed to create output directory "
-			<< dirname << ": " << strerror(error) << std::endl;
-			return EU_EXAMINE_FAIL;
+		else {
+			std::string dname = dirname;
+			size_t nextslash = dname.find('/');
+			do {
+				retval = mkdir(dname.substr(0, nextslash).c_str(), 0755);
+				if(retval && errno != EEXIST) {
+					retval = errno;
+					return retval;
+				}
+				nextslash = dname.find('/', nextslash+1);
+			} while(nextslash != std::string::npos);
+			Log::info << "Writing output to directory " << dirname << std::endl;
 		}
-		Log::info << "Writing output to directory " << dirname << std::endl;
 	}
 	else if (!S_ISDIR(statbuf.st_mode))
 	{
-		Log::warn << std::flush;
-		Log::error << progname << ": " << dirname
-		<< " exists but is not a directory!" << std::endl;
+		/* File exists, but is not a directory */
 		return EU_EXAMINE_FAIL;
 	}
 
