@@ -1,10 +1,10 @@
-Format: http://anonscm.debian.org/viewvc/dep/web/deps/dep5.mdwn?revision=174
+Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: extundelete
 Upstream-Contact: Nic Cas <number9652@users.sourceforge.net>
 Source: http://sourceforge.net/projects/extundelete/files/
 
 Files: *
-Copyright: 2009, 2010, Nic Case <number9652@users.sourceforge.net>
+Copyright: 2009-2012 Nic Case <number9652@users.sourceforge.net>
 License: GPL-2
 
 Files: acinclude.m4
@@ -38,11 +38,11 @@ License: X Consortium License
  tium.
 
 Files: compile depcomp
-Copyright: 1999, 2000, 2003, 2004, 2005, Free Software Foundation, Inc.
+Copyright: 1999-2000, 2003-2007, 2009-2011 Free Software Foundation, Inc.
 License: GPL-2+
 
 Files: missing
-Copyright: 1996, 1997, 1999, 2000, 2002, 2003, 2004, 2005 Free Software Foundation, Inc.
+Copyright: 1996-2000, 2002-2006, 2008-2012 Free Software Foundation, Inc.
 License: GPL-2+
 
 Files: src/kernel-jbd.h
@@ -54,7 +54,7 @@ Copyright: 1993, 1994, 1995, 1996, Theodore Ts'o
 License: GPL-2+
 
 Files: debian/*
-Copyright: 2010, 2011, Elías Alejandro Año Mendoza <ealmdz@gmail.com>
+Copyright: 2010-2013 Elías Alejandro Año Mendoza <ealmdz@gmail.com>
            2010, Christophe Monniez <christophe.monniez@fccu.be>
 License: GPL-2+
 
