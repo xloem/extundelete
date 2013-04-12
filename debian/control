@@ -5,7 +5,7 @@ Maintainer: Debian Forensics <forensics-devel@lists.alioth.debian.org>
 Uploaders: Christophe Monniez <christhophe.monniez@fccu.be>,
  Elías Alejandro Año Mendoza <ealmdz@gmail.com>
 Build-Depends: debhelper (>= 9.0.0), autotools-dev, e2fslibs-dev
-Standards-Version: 3.9.2
+Standards-Version: 3.9.4
 Homepage: http://extundelete.sourceforge.net/
 Vcs-Browser: http://git.debian.org/?p=forensics/extundelete.git
 Vcs-Git: git://git.debian.org/forensics/extundelete.git
