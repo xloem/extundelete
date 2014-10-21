@@ -1,8 +1,29 @@
-extundelete (0.2.3-1) UNRELEASED; urgency=low
+extundelete (0.2.4-1) unstable; urgency=low
 
+  [ Christophe Monniez ]
   * Imported Upstream version 0.2.3
+  * [2b2b330] Removing patch as linux2.l_i_reserved2 seems not to be used
+    anymore.
+  * [950d490] Removing now obsolete patch.
+  * [4a903ff] Removing another absolete patch.
+  * [b741130] Updating output dir patch.
+  * [09cf0c7] Removing broken output_dir patch.
+  * [1dd3169] Adding nm patch from Antonio Terceiro to fix a segfault
+    (Closes: #670815).
 
- -- Christophe Monniez <christophe.monniez@fccu.be>  Wed, 12 Dec 2012 14:16:20 +0100
+  [ Elías Alejandro ]
+  * [0f8143f] Imported Upstream version 0.2.4 (Closes: #765984)
+  * [be6cc0b] Bump debhelper compat to 9
+  * [3edb0f6] Bump Standards-Version to 3.9.4
+  * [4f90ee2] debian/copyright updated to format 1.0
+  * [7c3b7fb] debian/extundelete.1 update manpage
+
+  [ Michael Prokop ]
+  * [393e244] Bump Standards-Version to 3.9.6
+  * [b47622f] Update VCS headers
+  * [339f9ac] Update debian/copyright (file compile no longer exists)
+
+ -- Michael Prokop <mika@debian.org>  Tue, 21 Oct 2014 21:54:46 +0200
 
 extundelete (0.2.0-2) unstable; urgency=low
 
