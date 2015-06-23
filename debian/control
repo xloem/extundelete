@@ -2,7 +2,7 @@ Source: extundelete
 Section: utils
 Priority: optional
 Maintainer: Debian Forensics <forensics-devel@lists.alioth.debian.org>
-Uploaders: Christophe Monniez <christhophe.monniez@fccu.be>,
+Uploaders: Christophe Monniez <christophe.monniez@fccu.be>,
  Elías Alejandro Año Mendoza <ealmdz@gmail.com>
 Build-Depends: debhelper (>= 9.0.0), autotools-dev, e2fslibs-dev
 Standards-Version: 3.9.6
