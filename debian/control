@@ -1,7 +1,7 @@
 Source: extundelete
 Section: utils
 Priority: optional
-Maintainer: Debian Forensics <forensics-devel@lists.alioth.debian.org>
+Maintainer: Debian Security Tools <team+pkg-security@tracker.debian.org>
 Uploaders: Christophe Monniez <christophe.monniez@fccu.be>,
  Elías Alejandro Año Mendoza <ealmdz@gmail.com>
 Build-Depends: debhelper (>= 9.0.0), autotools-dev, e2fslibs-dev
