@@ -13,6 +13,7 @@ extundelete (0.2.4-2) unstable; urgency=medium
   * Bump Standards-Version to 4.2.1
   * Switch to debhelper compat level 11
   * Fix lintian warning space-in-std-shortname-in-dep5-copyright
+  * Add patch to work with recent autoconf/automake.
 
   [ Hilko Bengen ]
   * Add patch to fix FTBFS with new e2fsprogs (Closes: #894645)
