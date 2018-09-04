@@ -1,3 +1,24 @@
+extundelete (0.2.4-2) unstable; urgency=medium
+
+  * Team upload.
+
+  [ Joao Eriberto Mota Filho ]
+  * Fixed the Christophe's e-mail address.
+
+  [ Raphaël Hertzog ]
+  * Update team maintainer address to Debian Security Tools
+    <team+pkg-security@tracker.debian.org>
+  * Update Vcs-Git and Vcs-Browser for the move to salsa.debian.org
+  * Fix description of the i_size_high field which replaces i_dir_acl
+  * Bump Standards-Version to 4.2.1
+  * Switch to debhelper compat level 11
+  * Fix lintian warning space-in-std-shortname-in-dep5-copyright
+
+  [ Hilko Bengen ]
+  * Add patch to fix FTBFS with new e2fsprogs (Closes: #894645)
+
+ -- Raphaël Hertzog <hertzog@debian.org>  Tue, 04 Sep 2018 11:47:36 +0200
+
 extundelete (0.2.4-1) unstable; urgency=low
 
   [ Christophe Monniez ]
