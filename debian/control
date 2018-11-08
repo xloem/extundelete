@@ -2,8 +2,7 @@ Source: extundelete
 Section: utils
 Priority: optional
 Maintainer: Debian Security Tools <team+pkg-security@tracker.debian.org>
-Uploaders: Christophe Monniez <christophe.monniez@fccu.be>,
- Elías Alejandro Año Mendoza <ealmdz@gmail.com>
+Uploaders: Elías Alejandro Año Mendoza <ealmdz@gmail.com>
 Build-Depends: debhelper (>= 11), e2fslibs-dev
 Standards-Version: 4.2.1
 Homepage: http://extundelete.sourceforge.net/
