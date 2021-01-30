@@ -1,3 +1,27 @@
+extundelete (0.2.4-3) unstable; urgency=medium
+
+  [ Samuel Henrique ]
+  * Team Upload
+  * Bump DH to 13
+  * Bump Standards-Version to 4.5.1
+  * Add salsa-ci.yml
+  * Configure git-buildpackage for Debian
+  * d/control: Add Rules-Requires-Root: no
+  * d/rules: Add 'hardening=+all' flag for bindnow
+  * d/watch: Bump to v4
+
+  [ Raphaël Hertzog ]
+  * Drop Christophe Monniez from Uploaders
+
+  [ Debian Janitor ]
+  * Trim trailing whitespace.
+  * Use secure copyright file specification URI.
+  * Bump debhelper from old 11 to 12.
+  * Set debhelper-compat version in Build-Depends.
+  * Set upstream metadata fields: Bug-Submit (from ./configure), Repository.
+
+ -- Samuel Henrique <samueloph@debian.org>  Sat, 30 Jan 2021 22:20:59 +0000
+
 extundelete (0.2.4-2) unstable; urgency=medium
 
   * Team upload.
