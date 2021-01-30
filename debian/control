@@ -4,7 +4,7 @@ Priority: optional
 Maintainer: Debian Security Tools <team+pkg-security@tracker.debian.org>
 Uploaders: Elías Alejandro Año Mendoza <ealmdz@gmail.com>
 Build-Depends: debhelper-compat (= 13), e2fslibs-dev
-Standards-Version: 4.2.1
+Standards-Version: 4.5.1
 Rules-Requires-Root: no
 Homepage: http://extundelete.sourceforge.net/
 Vcs-Browser: https://salsa.debian.org/pkg-security-team/extundelete
