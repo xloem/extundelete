@@ -1,3 +1,0 @@
-01_fix_segmentation_fault.patch
-02_fix_ftbfs.patch
-Fix-configure.ac-to-work-with-recent-automake-autoconf.patch
