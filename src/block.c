@@ -77,6 +77,7 @@ struct ext2_extent_handle {
 	ext2_filsys		fs;
 	ext2_ino_t 		ino;
 	struct ext2_inode	*inode;
+    struct ext2_inode   inodebuf;
 	int			type;
 	int			level;
 	int			max_depth;
