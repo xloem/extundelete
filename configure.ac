@@ -6,8 +6,8 @@ m4_ifval(m4_esyscmd([printf %s $EU_VER]),
 [m4_define(EU_VERSION, m4_esyscmd([printf $EU_VER])) ],
 [m4_define(EU_VERSION, m4_esyscmd([git describe --tags| tr -d '\010-\012'])) ])
 AC_INIT(extundelete, EU_VERSION, extundelete.sourceforge.net)
+AM_INIT_AUTOMAKE
 echo "Configuring ${PACKAGE_STRING}"
-AM_INIT_AUTOMAKE([-Wall -Werror foreign])
 AC_CONFIG_SRCDIR([src/extundelete.cc])
 AC_CONFIG_HEADERS([config.h])
 
